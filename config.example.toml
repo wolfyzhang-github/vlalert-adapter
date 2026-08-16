@@ -1,8 +1,4 @@
 listen = "127.0.0.1:9094"
-state_file = "/var/lib/vlalert-adapter/state.json"
-mute_file = "/run/vlalert-mute"
-repeat_interval = "30m"
-state_ttl = "24h"
 request_timeout = "5s"
 heartbeat_url = ""
 

@@ -2,7 +2,6 @@ import json
 import queue
 import tempfile
 import threading
-import time
 import unittest
 import urllib.error
 import urllib.request
@@ -15,12 +14,7 @@ import vlalert_adapter as app
 class AdapterTests(unittest.TestCase):
     def setUp(self):
         self.temp = tempfile.TemporaryDirectory()
-        root = Path(self.temp.name)
         self.cfg = {
-            "state_file": str(root / "state.json"),
-            "mute_file": str(root / "mute"),
-            "repeat_seconds": 1800,
-            "ttl_seconds": 86400,
             "timeout_seconds": 5,
             "channels": {"test": {"type": "feishu", "webhook": "https://example.invalid"}},
             "route": [{"match": {}, "channels": ["test"]}],
@@ -36,62 +30,33 @@ class AdapterTests(unittest.TestCase):
         self.temp.cleanup()
 
     @mock.patch.object(app, "deliver", return_value=True)
-    def test_firing_dedup_resolved_then_fires_again(self, deliver):
-        state = {}
-        app.process_alert(self.firing, state, self.cfg)
-        app.process_alert(self.firing, state, self.cfg)
-        self.assertEqual(deliver.call_count, 1)
-        self.assertEqual(len(state), 1)
-
-        resolved = {**self.firing, "endsAt": "2000-01-01T00:00:00Z"}
-        app.process_alert(resolved, state, self.cfg)
+    def test_every_firing_is_forwarded_and_resolved_is_ignored(self, deliver):
+        app.process_alert(self.firing, self.cfg)
+        app.process_alert(self.firing, self.cfg)
         self.assertEqual(deliver.call_count, 2)
-        self.assertEqual(state, {})
-
-        app.process_alert(self.firing, state, self.cfg)
-        self.assertEqual(deliver.call_count, 3)
-
-    @mock.patch.object(app, "deliver", return_value=True)
-    def test_persisted_state_suppresses_after_reload(self, deliver):
-        state = {}
-        app.process_alert(self.firing, state, self.cfg)
-        reloaded = app.load_state(self.cfg["state_file"])
-        app.process_alert(self.firing, reloaded, self.cfg)
-        self.assertEqual(deliver.call_count, 1)
-
-    @mock.patch.object(app, "deliver", return_value=True)
-    def test_mute_updates_and_resolved_deletes_state(self, deliver):
-        Path(self.cfg["mute_file"]).write_text(str(time.time() + 60))
-        state = {}
-        app.process_alert(self.firing, state, self.cfg)
-        self.assertEqual(len(state), 1)
-        app.process_alert({**self.firing, "endsAt": "2000-01-01T00:00:00Z"}, state, self.cfg)
-        self.assertEqual(state, {})
-        deliver.assert_not_called()
+        resolved = {**self.firing, "endsAt": "2000-01-01T00:00:00Z"}
+        app.process_alert(resolved, self.cfg)
+        self.assertEqual(deliver.call_count, 2)
 
     @mock.patch.object(app, "deliver", return_value=False)
-    def test_failed_delivery_does_not_update_state(self, _deliver):
-        state = {}
-        app.process_alert(self.firing, state, self.cfg)
-        self.assertEqual(state, {})
-        self.assertFalse(Path(self.cfg["state_file"]).exists())
+    def test_failed_delivery_is_handled(self, deliver):
+        app.process_alert(self.firing, self.cfg)
+        deliver.assert_called_once()
 
-    def test_state_gc_and_duration_parser(self):
-        state = {
-            "old": {"last_sent": 1},
-            "new": {"last_sent": time.time(), "labels": {}, "first_seen": time.time()},
-        }
-        app.save_state(state, self.cfg)
-        self.assertEqual(set(state), {"new"})
+    def test_duration_parser(self):
         self.assertEqual(app.parse_duration("90s"), 90)
         self.assertEqual(app.parse_duration("2h"), 7200)
         with self.assertRaises(ValueError):
             app.parse_duration("1d")
 
     def test_render_missing_annotations_and_channel_payloads(self):
-        title, body = app.render({"labels": {"alertname": "Bare", "service": "x"}}, False)
+        title, body = app.render({"labels": {"alertname": "Bare", "service": "x", "pod": "hidden"}})
         self.assertEqual(title, "⚠️ Bare")
         self.assertIn("service=x", body)
+        self.assertNotIn("pod=hidden", body)
+        self.assertNotIn("generatorURL", body)
+        self.assertEqual(app.render({"labels": {"alertname": "Critical", "severity": "critical"}})[0], "🚨 Critical")
+        self.assertEqual(app.render({"labels": {"alertname": "Info", "severity": "info"}})[0], "ℹ️ Info")
         with mock.patch.object(app, "post_json", return_value={"code": 0}) as post:
             app.send_channel({"type": "feishu", "webhook": "https://hook", "secret": "secret"}, title, body, "warning", 5)
             payload = post.call_args.args[1]
@@ -112,14 +77,13 @@ class AdapterTests(unittest.TestCase):
                 raise OSError("offline")
 
         with mock.patch.object(app, "send_channel", side_effect=fake_send), mock.patch.object(app.time, "sleep") as sleep:
-            self.assertFalse(app.deliver(self.firing, ["bad", "good"], cfg, False))
+            self.assertFalse(app.deliver(self.firing, ["bad", "good"], cfg))
         self.assertEqual(calls, ["bad", "bad", "bad", "good"])
         self.assertEqual([call.args[0] for call in sleep.call_args_list], [2, 5])
 
     def test_config_rejects_unknown_route_channel(self):
         config = Path(self.temp.name) / "config.toml"
         config.write_text(
-            f'state_file = "{self.temp.name}/state/state.json"\n'
             '[[route]]\nmatch = {}\nchannels = ["missing"]\n',
             encoding="utf-8",
         )

@@ -7,7 +7,6 @@ Wants=network-online.target
 Type=simple
 User=nobody
 Group=nogroup
-StateDirectory=vlalert-adapter
 ExecStart=/usr/bin/python3 /usr/local/bin/vlalert_adapter.py --config /etc/vlalert-adapter.toml
 Restart=always
 RestartSec=5s

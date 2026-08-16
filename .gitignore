@@ -2,5 +2,3 @@ __pycache__/
 *.py[cod]
 .DS_Store
 config.toml
-state.json
-state.json.tmp
