@@ -32,6 +32,8 @@ journalctl -u vlalert-adapter -f
 
 vmalert 会请求 `/api/v2/alerts`。修改配置后执行 `sudo systemctl restart vlalert-adapter`。路由按书写顺序匹配，第一条标签全部精确相等的规则生效；空 `match` 可作为兜底。
 
+通知统一渲染成一行：`{severity 图标} {service} {annotations.summary}`，例如 `🚨 blog-studio 近 1 分钟出现 1 条 ERROR`。缺少 `service` 时回退到 `alertname`。
+
 ## 手工投递
 
 先在配置中填入真实渠道凭据并启动服务，然后从仓库目录执行：

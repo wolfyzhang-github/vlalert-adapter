@@ -9,7 +9,6 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 LOG = logging.getLogger("vlalert-adapter")
 WORK_QUEUE = queue.Queue()
 _EMOJI_BY_SEVERITY = {"critical": "🚨", "warning": "⚠️", "info": "ℹ️"}
-_KEEP_LABELS = ("service", "instance", "job", "node", "environment")
 
 def parse_duration(value):
     match = re.fullmatch(r"(\d+)([smh])", str(value))
@@ -72,16 +71,9 @@ def render(alert):
     name = str(labels.get("alertname", "Alert"))
     severity = str(labels.get("severity", "warning"))
     emoji = _EMOJI_BY_SEVERITY.get(severity, "⚠️")
-    title = f"{emoji} {name}"
-    tags = ", ".join(
-        f"{key}={value}" for key, value in sorted(labels.items())
-        if key in _KEEP_LABELS
-    )
-    summary = str((alert.get("annotations") or {}).get("summary") or name)
-    parts = [summary]
-    if tags:
-        parts.append(tags)
-    return title, "\n".join(parts)
+    service = str(labels.get("service") or name)
+    summary = str((alert.get("annotations") or {}).get("summary") or "")
+    return " ".join(part for part in (emoji, service, summary) if part)
 
 def post_json(url, payload, timeout):
     data = json.dumps(payload, ensure_ascii=False).encode()
@@ -95,9 +87,9 @@ def post_json(url, payload, timeout):
     except json.JSONDecodeError:
         return {}
 
-def send_channel(channel, title, body, severity, timeout):
+def send_channel(channel, message, severity, timeout):
     if channel["type"] == "feishu":
-        payload = {"msg_type": "text", "content": {"text": f"{title}\n{body}"}}
+        payload = {"msg_type": "text", "content": {"text": message}}
         if channel.get("secret"):
             timestamp = str(int(time.time()))
             key = f"{timestamp}\n{channel['secret']}".encode()
@@ -108,21 +100,21 @@ def send_channel(channel, title, body, severity, timeout):
             raise RuntimeError(f"Feishu rejected request: {result}")
     else:
         url = f"{channel.get('server', 'https://api.day.app').rstrip('/')}/{channel['key']}"
-        payload = {"title": title, "body": body, "group": "vlalert", "level": "critical" if severity == "critical" else "timeSensitive", "isArchive": 1}
+        payload = {"body": message, "group": "vlalert", "level": "critical" if severity == "critical" else "timeSensitive", "isArchive": 1}
         result = post_json(url, payload, timeout)
         if result.get("code", 200) not in (200, "200"):
             raise RuntimeError(f"Bark rejected request: {result}")
 
 def deliver(alert, channel_names, cfg):
     labels = alert.get("labels") or {}
-    title, body = render(alert)
+    message = render(alert)
     all_succeeded = True
     for name in channel_names:
         for attempt, delay in enumerate((0, 2, 5)):
             if delay:
                 time.sleep(delay)
             try:
-                send_channel(cfg["channels"][name], title, body, labels.get("severity"), cfg["timeout_seconds"])
+                send_channel(cfg["channels"][name], message, labels.get("severity"), cfg["timeout_seconds"])
                 break
             except Exception as exc:  # keep the worker alive on all transport failures
                 if attempt == 2:

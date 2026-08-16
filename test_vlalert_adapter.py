@@ -49,22 +49,23 @@ class AdapterTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             app.parse_duration("1d")
 
-    def test_render_missing_annotations_and_channel_payloads(self):
-        title, body = app.render({"labels": {"alertname": "Bare", "service": "x", "pod": "hidden"}})
-        self.assertEqual(title, "⚠️ Bare")
-        self.assertIn("service=x", body)
-        self.assertNotIn("pod=hidden", body)
-        self.assertNotIn("generatorURL", body)
-        self.assertEqual(app.render({"labels": {"alertname": "Critical", "severity": "critical"}})[0], "🚨 Critical")
-        self.assertEqual(app.render({"labels": {"alertname": "Info", "severity": "info"}})[0], "ℹ️ Info")
+    def test_render_single_line_and_channel_payloads(self):
+        message = app.render({
+            "labels": {"alertname": "ErrorLogs", "service": "blog-studio", "severity": "critical", "pod": "hidden"},
+            "annotations": {"summary": "近 1 分钟出现 1 条 ERROR"},
+        })
+        self.assertEqual(message, "🚨 blog-studio 近 1 分钟出现 1 条 ERROR")
+        self.assertEqual(app.render({"labels": {"alertname": "Bare"}}), "⚠️ Bare")
+        self.assertEqual(app.render({"labels": {"alertname": "Info", "severity": "info"}}), "ℹ️ Info")
         with mock.patch.object(app, "post_json", return_value={"code": 0}) as post:
-            app.send_channel({"type": "feishu", "webhook": "https://hook", "secret": "secret"}, title, body, "warning", 5)
+            app.send_channel({"type": "feishu", "webhook": "https://hook", "secret": "secret"}, message, "warning", 5)
             payload = post.call_args.args[1]
             self.assertIn("timestamp", payload)
             self.assertIn("sign", payload)
+            self.assertEqual(payload["content"]["text"], message)
         with mock.patch.object(app, "post_json", return_value={"code": 200}) as post:
-            app.send_channel({"type": "bark", "server": "https://bark", "key": "key"}, title, body, "critical", 5)
-            self.assertEqual(post.call_args.args[1]["level"], "critical")
+            app.send_channel({"type": "bark", "server": "https://bark", "key": "key"}, message, "critical", 5)
+            self.assertEqual(post.call_args.args[1], {"body": message, "group": "vlalert", "level": "critical", "isArchive": 1})
 
     def test_failed_channel_retries_and_does_not_block_other_channel(self):
         cfg = dict(self.cfg)
