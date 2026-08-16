@@ -13,14 +13,16 @@ sudo systemctl daemon-reload
 sudo systemctl enable --now vlalert-adapter
 ```
 
-unit 使用 `User=nobody`，默认只监听 `127.0.0.1:9094`。
+unit 使用 `User=nobody`。默认监听 `0.0.0.0:9094`，可从 `192.168.31.0/24` 局域网访问；建议用防火墙限制该端口只允许可信内网。如果只想绑定 LXC 的局域网网卡，可将 `listen` 改为完整地址，例如 `192.168.31.20:9094`。
 
 查看状态和日志：
 
 ```sh
-curl -s http://127.0.0.1:9094/healthz
+curl -s http://127.0.0.1:9094/health
 journalctl -u vlalert-adapter -f
 ```
+
+Uptime Kuma 可监测 `http://192.168.31.<LXC-IP>:9094/health`；兼容路径 `/healthz` 也可用。响应包含当前异步队列长度。
 
 ## 配置 vmalert
 
@@ -47,5 +49,4 @@ curl -i -H 'Content-Type: application/json' --data-binary @test_payload.json htt
 ## 运维注意事项
 
 - 所有出站请求默认 5 秒超时，可用 `request_timeout` 调整。投递失败会按 2 秒、5 秒间隔再试两次。
-- `heartbeat_url` 非空时，独立线程每 60 秒 GET 一次该地址。
 - 本服务自己的失败日志可能包含 `ERROR`。如果这些日志也被 VictoriaLogs 采集，而告警规则匹配 `ERROR`，会形成“投递失败 → 日志告警 → 再次投递失败”的自激风暴。务必在日志采集侧排除本服务，或在 vmalert LogsQL 规则中明确排除它。

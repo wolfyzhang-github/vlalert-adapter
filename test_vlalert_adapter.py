@@ -91,6 +91,11 @@ class AdapterTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "unknown channels"):
             app.load_config(config)
 
+    def test_default_listen_is_all_interfaces(self):
+        config = Path(self.temp.name) / "empty.toml"
+        config.write_text("", encoding="utf-8")
+        self.assertEqual(app.load_config(config)["listen"], "0.0.0.0:9094")
+
     def test_http_contract_and_health(self):
         while True:
             try:
@@ -108,8 +113,10 @@ class AdapterTests(unittest.TestCase):
                 self.assertEqual(response.status, 200)
             self.assertEqual(app.WORK_QUEUE.get_nowait(), self.firing)
             app.WORK_QUEUE.task_done()
-            with urllib.request.urlopen(base + "/healthz", timeout=2) as response:
+            with urllib.request.urlopen(base + "/health", timeout=2) as response:
                 self.assertEqual(json.load(response)["queue_length"], 0)
+            with urllib.request.urlopen(base + "/healthz", timeout=2) as response:
+                self.assertEqual(response.status, 200)
             bad = urllib.request.Request(base + "/api/v2/alerts", data=b"{}", headers={"Content-Type": "application/json"})
             with self.assertRaises(urllib.error.HTTPError) as caught:
                 urllib.request.urlopen(bad, timeout=2)

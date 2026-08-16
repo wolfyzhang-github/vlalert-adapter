@@ -19,7 +19,7 @@ def parse_duration(value):
 def load_config(path):
     with open(path, "rb") as handle:
         cfg = tomllib.load(handle)
-    cfg.setdefault("listen", "127.0.0.1:9094")
+    cfg.setdefault("listen", "0.0.0.0:9094")
     cfg["timeout_seconds"] = parse_duration(cfg.get("request_timeout", "5s"))
     channels = cfg.get("channels", {})
     routes = cfg.get("route", [])
@@ -150,19 +150,9 @@ def worker(cfg):
         finally:
             WORK_QUEUE.task_done()
 
-def heartbeat(cfg):
-    url = cfg.get("heartbeat_url")
-    while url:
-        try:
-            with urllib.request.urlopen(url, timeout=cfg["timeout_seconds"]) as response:
-                response.read()
-        except Exception as exc:
-            LOG.warning("heartbeat failed: %s", exc)
-        time.sleep(60)
-
 class Handler(BaseHTTPRequestHandler):
     def do_GET(self):
-        if self.path != "/healthz":
+        if self.path not in ("/health", "/healthz"):
             self.send_error(404)
             return
         self.reply(200, {"status": "ok", "queue_length": WORK_QUEUE.qsize()})
@@ -206,8 +196,6 @@ def main():
     except (OSError, ValueError, tomllib.TOMLDecodeError) as exc:
         parser.error(str(exc))
     threading.Thread(target=worker, args=(cfg,), daemon=True, name="delivery-worker").start()
-    if cfg.get("heartbeat_url"):
-        threading.Thread(target=heartbeat, args=(cfg,), daemon=True, name="heartbeat").start()
     server = ThreadingHTTPServer((host, int(port)), Handler)
     LOG.info("listening on %s:%s", host, port)
     try:

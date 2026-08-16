@@ -1,6 +1,5 @@
-listen = "127.0.0.1:9094"
+listen = "0.0.0.0:9094"
 request_timeout = "5s"
-heartbeat_url = ""
 
 [channels.feishu]
 type = "feishu"
