@@ -1,0 +1,25 @@
+listen = "127.0.0.1:9094"
+state_file = "/var/lib/vlalert-adapter/state.json"
+mute_file = "/run/vlalert-mute"
+repeat_interval = "30m"
+state_ttl = "24h"
+request_timeout = "5s"
+heartbeat_url = ""
+
+[channels.feishu]
+type = "feishu"
+webhook = "https://open.feishu.cn/open-apis/bot/v2/hook/xxxx"
+secret = ""
+
+[channels.bark]
+type = "bark"
+server = "https://api.day.app"
+key = "xxxx"
+
+[[route]]
+match = { severity = "critical" }
+channels = ["bark", "feishu"]
+
+[[route]]
+match = {}
+channels = ["feishu"]

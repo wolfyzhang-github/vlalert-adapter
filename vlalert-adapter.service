@@ -1,0 +1,18 @@
+[Unit]
+Description=VictoriaLogs vmalert notification adapter
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=nobody
+Group=nogroup
+StateDirectory=vlalert-adapter
+ExecStart=/usr/bin/python3 /usr/local/bin/vlalert_adapter.py --config /etc/vlalert-adapter.toml
+Restart=always
+RestartSec=5s
+NoNewPrivileges=true
+PrivateTmp=true
+
+[Install]
+WantedBy=multi-user.target

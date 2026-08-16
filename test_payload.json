@@ -1,0 +1,15 @@
+[
+  {
+    "labels": {
+      "alertname": "ManualTest",
+      "severity": "warning",
+      "service": "vlalert-adapter-test"
+    },
+    "annotations": {
+      "summary": "vlalert-adapter 手工投递测试"
+    },
+    "startsAt": "2026-08-16T10:00:00Z",
+    "endsAt": "2099-01-01T00:00:00Z",
+    "generatorURL": "http://127.0.0.1:8880/manual-test"
+  }
+]
